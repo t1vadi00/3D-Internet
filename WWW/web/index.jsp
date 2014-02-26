@@ -11,17 +11,22 @@
         <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
         <title>Google map page</title>
         <script src="http://ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
-        <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAw7kc4ra3lql7rWxxDl7wII4WZ8p8Gf_g&sensor=true"></script>
+        <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyC0xjNl30COEmqU7TkUc3W78dR7oGWBecQ&sensor=true&libraries=visualization"></script>
         <style type="text/css">
             #map-canvas { height: 500px; }
             .icon { width: 16px; height: 16px; }
         </style>
         <script type="text/javascript">
             var initialLocation;
-            var url = 'http://dev.cyberlightning.com:44446/';
+            var serverURL = 'http://dev.cyberlightning.com:44446/';
             var map;
-            var busMarkers = new Array();
+            var position = new Array();
+            var sensorMarkers = new Array();
+            var busMarkers = new Array(); 
+            var busRoutes = new Array();
+            var busRoad;
             var wlanMarkers = new Array();
+            var wlanPoints = new Array();
             var parkingMarkers = new Array();
             var trafficMarkers = new Array();
             var camMarkers = new Array();
@@ -39,91 +44,27 @@
                 
                 if(navigator.geolocation){
                     browserSupportFlag = true;
-                    navigator.geolocation.getCurrentPosition(function(position){
-                        initialLocation = new google.maps.LatLng(position.coords.latitude,position.coords.longitude);
+                    navigator.geolocation.getCurrentPosition(function(currentPosition){
+                        position[0] = currentPosition.coords.latitude;
+                        position[1] = currentPosition.coords.longitude;
+                        
+                        initialLocation = new google.maps.LatLng(position[0], position[1]);
                         map.setCenter(initialLocation);
 
-                        var marker = new google.maps.Marker({
+                        var currentMarker = new google.maps.Marker({
                             position: initialLocation,
                             title: 'Your Location',
                             map: map
                         });
                         
-                        $.ajax({
-                            type: "GET",
-                            url: url,
-                            dataType: 'json',
-                            data: {
-                                action: "loadBySpatial",
-                                lat: position.coords.latitude,
-                                lon: position.coords.longitude,
-                                radius: 100000,
-                                maxResults: 750
-                            }
-                        }).success(function(response) {
-                            var markers = new Array();
-                            var keys = Object.keys(response);
-                            
-                            for (var i = 0; i < keys.length; i ++){
-                                var sensorKey = keys[i];
-                                var sensorName = response[keys[i]].attributes.name;
-                                var sensorType = response[keys[i]].attributes.type;
-                                var sensorIcon;
-
-                                switch (sensorType) {
-                                    case ('bus'):
-                                        sensorIcon = 'bus.png';
-                                        break;
-                                    case ('wlanstation'):
-                                        sensorIcon = 'wlan.png';
-                                        break;
-                                    case ('weatherstation'):
-                                        sensorIcon = 'weather.png';
-                                        break;
-                                    case ('parkinghall'):
-                                        sensorIcon = 'parking.png';
-                                        break;
-                                    case ('trafficcamera'):
-                                        sensorIcon = 'cam.png';
-                                        break;
-                                    case ('trafficstation'):
-                                        sensorIcon = 'traffic.png';
-                                        break;
-                                }
-
-                                var sensorLat = response[keys[i]].attributes.gps[0];
-                                var sensorLng = response[keys[i]].attributes.gps[1];
-
-                                var sensorPosition = new google.maps.LatLng(sensorLat, sensorLng);
-
-                                markers[i] = new google.maps.Marker({
-                                    position: sensorPosition,
-                                    title: sensorName,
-                                    map: map,
-                                    icon: sensorIcon
-                                });
-                                
-                                if (sensorType == "bus"){
-                                    busMarkers.push(markers[i]);
-                                    addOnBusClick(markers[i], sensorKey);
-                                }else if (sensorType == "trafficcamera"){
-                                    camMarkers.push(markers[i]);
-                                    addOnCamClick(markers[i], sensorKey);
-                                }else if (sensorType != "wlanstation"){
-                                    addOnInfoClick(markers[i], sensorKey);
-                                    if (sensorType == "weatherstation"){
-                                        weatherMarkers.push(markers[i]);
-                                    }
-                                    if (sensorType == "trafficstation"){
-                                        trafficMarkers.push(markers[i]);
-                                    }
-                                    if (sensorType == "parkinghall"){
-                                        parkingMarkers.push(markers[i]);
-                                    }
-                                }else{
-                                    wlanMarkers.push(markers[i]);
-                                }
-                            }
+                        var searchRadius = new google.maps.Circle({
+                            strokeColor: '#FF0000',
+                            strokeOpacity: 0.8,
+                            strokeWeight: 2,
+                            fillOpacity: 0,
+                            map: map,
+                            center: initialLocation,
+                            radius: 100000
                         });
                     }, function() {
                         handleNoGeolocation(browserSupportFlag);
@@ -165,34 +106,40 @@
                 });
             }
             
-            function plotRoute(key){
-                $.ajax({
-                    type: "GET",
-                    url: url,
-                    dataType: 'json',
-                    data: {
-                        action: "loadById",
-                        device_id: key,
-                        maxResults: 1
-                    }
-                }).success(function(response) {
-                    var sensorRouteCoords = new Array();
-                    var sensorRouteLength = response[key].sensors[0].attributes.value_range.length;
-
-                    for (var j = 0; j < (sensorRouteLength/2); j++){
-                        var sensorRouteLat = response[key].sensors[0].attributes.value_range[(j * 2)];
-                        var sensorRouteLng = response[key].sensors[0].attributes.value_range[(j * 2) + 1];
-                        sensorRouteCoords.push(new google.maps.LatLng(sensorRouteLat, sensorRouteLng));
-                    }
-                    var sensorRoute = new google.maps.Polyline({
-                        path: sensorRouteCoords,
-                        map: map,
-                        geodesic: true,
-                        strokeColor: '#FF0000',
-                        strokeOpacity: 1.0,
-                        strokeWeight: 2
-                    });
+            function plotRoute(sensorKey){
+                var directionService = new google.maps.DirectionsService();
+                busRoad = new google.maps.MVCArray();
+               
+                var busRoute = new google.maps.Polyline({
+                    map: map,
+                    strokeColor: '#FF0000',
+                    strokeOpacity: 1.0,
+                    strokeWeight: 2
                 });
+                
+                busRoad.push(busRoutes[sensorKey][0]);
+                
+                for (var h = 1; h < busRoutes[sensorKey].length; h++){
+                    (function(sensorRouteKey, thisStop, previousStop, busRouteArray) {
+                        setInterval(function(){
+                        directionService.route({
+                            origin: busRoutes[sensorRouteKey][previousStop],
+                            destination: busRoutes[sensorRouteKey][thisStop],
+                            travelMode: google.maps.DirectionsTravelMode.TRANSIT
+                        }, function(result, status){
+                            $('#text').append(status + "<br />");
+                           if (status == google.maps.DirectionsStatus.OK) {
+                                for (var j = 0; j < result.routes[0].overview_path.length; j++) {
+                                    $('#text').append(result.routes[0].overview_path[j] + "<br />");
+                                    busRoad.push(result.routes[0].overview_path[j]);
+                                }
+                                $('#text').append("<br />");
+                           }
+                        });
+                        }, 10000);
+                    })(sensorKey, h, h-1, busRoutes);
+                }
+                busRoute.setPath(busRoad);
             }
             
             function openImage(sensorKey){
@@ -204,10 +151,11 @@
                         action: "loadById",
                         device_id: sensorKey,
                         maxResults: 1
+                    },
+                    success: function(response) {
+                        var sensorImage = response[sensorKey].sensors[0].values[0].values;
+                        window.open(sensorImage);
                     }
-                }).success(function(response) {
-                    var sensorImage = response[sensorKey].sensors[0].values[0].values;
-                    window.open(sensorImage);
                 });
             }
             
@@ -220,30 +168,29 @@
                         action: "loadById",
                         device_id: sensorKey,
                         maxResults: 1
+                    },
+                    success: function(response) {
+                        switch (response[sensorKey].attributes.type){
+                            case ('weatherstation'):
+                                contentString = "Air temperature: " + response[sensorKey].sensors[0].values[0].values + " C" +
+                                        "<br />Road temperature: " + response[sensorKey].sensors[1].values[0].values + " C" +
+                                        "<br />Rain intensity: " + response[sensorKey].sensors[2].values[0].values;
+                                break;
+                            case ('parkinghall'):
+                                contentString = "Free places: " + response[sensorKey].sensors[0].values[0].values +
+                                        "<br />Total places: " + response[sensorKey].sensors[1].values[0].values;
+                                break;
+                            case ('trafficstation'):
+                                contentString = "Traffic speed in: " + response[sensorKey].sensors[0].values[0].values + " km/h" +
+                                        "<br />Traffic speed out: " + response[sensorKey].sensors[1].values[0].values + " km/h";
+                                break;
+                        }
+                        var infoWindow = new google.maps.InfoWindow({
+                            content: "<div style='width: 175px; height: 100px;'>" + contentString + "</div>"
+                        });
+                        infoWindow.open(map,sensorMarker);
                     }
-                }).success(function(response) {
-                    switch (response[sensorKey].attributes.type){
-                        case ('weatherstation'):
-                            contentString = "Air temperature: " + response[sensorKey].sensors[0].values[0].values + " C" +
-                                    "<br />Road temperature: " + response[sensorKey].sensors[1].values[0].values + " C" +
-                                    "<br />Rain intensity: " + response[sensorKey].sensors[2].values[0].values;
-                            break;
-                        case ('parkinghall'):
-                            contentString = "Free places: " + response[sensorKey].sensors[0].values[0].values +
-                                    "<br />Total places: " + response[sensorKey].sensors[1].values[0].values;
-                            break;
-                        case ('trafficstation'):
-                            contentString = "Traffic speed in: " + response[sensorKey].sensors[0].values[0].values + " km/h" +
-                                    "<br />Traffic speed out: " + response[sensorKey].sensors[1].values[0].values + " km/h";
-                            break;
-                    }
-                    var infoWindow = new google.maps.InfoWindow({
-                        content: "<div style='width: 175px; height: 100px;'>" + contentString + "</div>"
-                    });
-                    infoWindow.open(map,sensorMarker);
-                });
-                
-                
+                });    
             }
             
             function toggleBus(){
@@ -315,26 +262,99 @@
             function promptMaxResults(sensorType){
                 var maxResults = prompt("Number of results");
                 
-                if(maxResults===null){
+                if(maxResults == null){
                     $('#' + sensorType).attr('checked',false);
                 }else{
                     $.ajax({
                     type: "GET",
-                    url: url,
+                    url: serverURL,
                     dataType: 'json',
                     data: {
                         action: "loadBySpatialAndType",
-                        lat: position.coords.latitude,
-                        lon: position.coords.longitude,
+                        lat: position[0],
+                        lon: position[1],
                         radius: 100000,
                         maxResults: maxResults,
                         type: sensorType
+                    },
+                    success: function(response) {
+                        var keys = Object.keys(response);
+
+                        for (var i = 0; i < keys.length; i ++){
+                            var sensorKey = keys[i];
+
+                            var sensorName = response[sensorKey].attributes.name;
+
+                            var sensorLat = response[sensorKey].attributes.gps[0];
+                            var sensorLng = response[sensorKey].attributes.gps[1];
+
+                            var sensorPosition = new google.maps.LatLng(sensorLat, sensorLng);
+
+                            sensorMarkers[i] = new google.maps.Marker({
+                                position: sensorPosition,
+                                title: sensorName,
+                                map: map
+                            });
+
+                            switch (sensorType) {
+                                case ('bus'):
+                                    sensorMarkers[i].setIcon("bus.png");
+                                    busMarkers.push(sensorMarkers[i]);
+                                    addOnBusClick(sensorMarkers[i], sensorKey);
+
+                                    var sensorRouteCoords = new Array();
+                                    var sensorRouteLength = response[sensorKey].sensors[0].attributes.value_range.length;
+
+                                    for (var j = 0; j < (sensorRouteLength/2); j++){
+                                        var sensorRouteLat = response[sensorKey].sensors[0].attributes.value_range[(j * 2)];
+                                        var sensorRouteLng = response[sensorKey].sensors[0].attributes.value_range[(j * 2) + 1];
+                                        sensorRouteCoords.push(new google.maps.LatLng(sensorRouteLat, sensorRouteLng));
+                                    }
+
+                                    busRoutes[sensorKey] = sensorRouteCoords;
+
+                                    break;
+                                case ('wlanstation'):
+                                    sensorMarkers[i].setIcon("wlan.png");
+                                    wlanMarkers.push(sensorMarkers[i]);
+                                    
+                                    wlanPoints.push(sensorPosition);
+                                    break;
+                                case ('weatherstation'):
+                                    sensorMarkers[i].setIcon("weather.png");
+                                    break;
+                                case ('parkinghall'):
+                                    sensorMarkers[i].setIcon("parking.png");
+                                    break;
+                                case ('trafficcamera'):
+                                    sensorMarkers[i].setIcon("cam.png");
+                                    break;
+                                case ('trafficstation'):
+                                    sensorMarkers[i].setIcon("traffic.png");
+                                    break;
+                                case ('lightsource'):
+                                    sensorMarkers[i].setIcon("lightsource.png");
+                                    break;
+                            }
+                        }
                     }
-                }).success(function(response) {
-                    var sensorImage = response[sensorKey].sensors[0].values[0].values;
-                    window.open(sensorImage);
                 });
                 }
+            }
+            
+            function toggleWlanHeatmap() {
+                var wlanRouters = new google.maps.MVCArray(wlanPoints);
+                
+                for (var i = 0; i < wlanMarkers.length; i++){
+                    var wlanMarker = wlanMarkers[i];
+                    wlanMarker.setMap(null);
+                }
+                
+                wlanHeatmap = new google.maps.visualization.HeatmapLayer({
+                    data: wlanRouters,
+                    map: map,
+                    radius: 50
+                });
             }
         </script>
     </head>
@@ -343,11 +363,13 @@
         <div id="map-canvas"></div>
         <div style="position: absolute; right: 10%; top: 20%; background-color: white; border: solid 1px black; padding: 5px;">
             <input style="margin-right: 5px;" type="checkbox" id="bus" name="filter" onchange="promptMaxResults('bus');" autocomplete="off"/><label for="bus"><img class="icon" src="bus.png"/>  Oulu Bus</label><br />
-            <input style="margin-right: 5px;" type="checkbox" id="wlanstation" name="filter" onchange="promptMaxResults('wlanstation');" autocomplete="off"/><label for="wlan"><img class="icon" src="wlan.png"/>  WLAN Station</label><br />
-            <input style="margin-right: 5px;" type="checkbox" id="weatherstation" name="filter" onchange="promptMaxResults('weatherstation');" autocomplete="off"/><label for="weather"><img class="icon" src="weather.png"/>  Weather Station</label><br />
-            <input style="margin-right: 5px;" type="checkbox" id="parkinghall" name="filter" onchange="promptMaxResults('parkinghall');" autocomplete="off"/><label for="parking"><img class="icon" src="parking.png"/>  Parking Hall</label><br />
-            <input style="margin-right: 5px;" type="checkbox" id="trafficcamera" name="filter" onchange="promptMaxResults('trafficcamera');" autocomplete="off"/><label for="cam"><img class="icon" src="cam.png"/>  Traffic Camera</label><br />
-            <input style="margin-right: 5px;" type="checkbox" id="trafficstation" name="filter" onchange="promptMaxResults('trafficstation');" autocomplete="off"/><label for="traffic"><img class="icon" src="traffic.png"/>  Traffic Station</label>
+            <input style="margin-right: 5px;" type="checkbox" id="wlanstation" name="filter" onchange="promptMaxResults('wlanstation');" autocomplete="off"/><label for="wlanstation"><img class="icon" src="wlan.png"/>  WLAN Station</label><br />
+            <input style="margin-right: 5px;" type="checkbox" id="weatherstation" name="filter" onchange="promptMaxResults('weatherstation');" autocomplete="off"/><label for="weatherstation"><img class="icon" src="weather.png"/>  Weather Station</label><br />
+            <input style="margin-right: 5px;" type="checkbox" id="parkinghall" name="filter" onchange="promptMaxResults('parkinghall');" autocomplete="off"/><label for="parkinghall"><img class="icon" src="parking.png"/>  Parking Hall</label><br />
+            <input style="margin-right: 5px;" type="checkbox" id="trafficcamera" name="filter" onchange="promptMaxResults('trafficcamera');" autocomplete="off"/><label for="trafficcamera"><img class="icon" src="cam.png"/>  Traffic Camera</label><br />
+            <input style="margin-right: 5px;" type="checkbox" id="trafficstation" name="filter" onchange="promptMaxResults('trafficstation');" autocomplete="off"/><label for="trafficstation"><img class="icon" src="traffic.png"/>  Traffic Station</label><br />
+            <input style="margin-right: 5px;" type="checkbox" id="lightsource" name="filter" onchange="promptMaxResults('lightsource');" autocomplete="off"/><label for="lightsource"><img class="icon" src="lightsource.png"/>  Light Source</label>
         </div>
+        <div id="text"></div>
     </body>
 </html>
