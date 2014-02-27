@@ -31,6 +31,9 @@
             var trafficMarkers = new Array();
             var camMarkers = new Array();
             var weatherMarkers = new Array();
+            var directionService;
+            var busRoute;
+            var routeLoop;
             
             function initialize(){
                 var ouluLocation = new google.maps.LatLng(65.1, 25.28);
@@ -107,10 +110,10 @@
             }
             
             function plotRoute(sensorKey){
-                var directionService = new google.maps.DirectionsService();
+                directionService = new google.maps.DirectionsService();
                 busRoad = new google.maps.MVCArray();
                
-                var busRoute = new google.maps.Polyline({
+                busRoute = new google.maps.Polyline({
                     map: map,
                     strokeColor: '#FF0000',
                     strokeOpacity: 1.0,
@@ -119,27 +122,35 @@
                 
                 busRoad.push(busRoutes[sensorKey][0]);
                 
-                for (var h = 1; h < busRoutes[sensorKey].length; h++){
-                    (function(sensorRouteKey, thisStop, previousStop, busRouteArray) {
-                        setInterval(function(){
-                        directionService.route({
-                            origin: busRoutes[sensorRouteKey][previousStop],
-                            destination: busRoutes[sensorRouteKey][thisStop],
-                            travelMode: google.maps.DirectionsTravelMode.TRANSIT
-                        }, function(result, status){
-                            $('#text').append(status + "<br />");
-                           if (status == google.maps.DirectionsStatus.OK) {
-                                for (var j = 0; j < result.routes[0].overview_path.length; j++) {
-                                    $('#text').append(result.routes[0].overview_path[j] + "<br />");
-                                    busRoad.push(result.routes[0].overview_path[j]);
-                                }
-                                $('#text').append("<br />");
-                           }
-                        });
-                        }, 10000);
-                    })(sensorKey, h, h-1, busRoutes);
+                var h = 1;
+                
+                routeLoop = setInterval(function(){getRoutePart(sensorKey, h, h-1, busRoutes)},10000);
+                
+            }
+            
+            function getRoutePart(sensorRouteKey, thisStop, previousStop, busRouteArray){
+                
+                if (thisStop == 50){
+                //if (thisStop == busRouteArray[sensorRouteKey].length){
+                    clearInterval(routeLoop);
                 }
-                busRoute.setPath(busRoad);
+                directionService.route({
+                    origin: busRouteArray[sensorRouteKey][previousStop],
+                    destination: busRouteArray[sensorRouteKey][thisStop],
+                    travelMode: google.maps.DirectionsTravelMode.TRANSIT
+                }, function(result, status){
+                    $('#text').append(status + "<br />");
+                   if (status == google.maps.DirectionsStatus.OK) {
+                        for (var j = 0; j < result.routes[0].overview_path.length; j++) {
+                            $('#text').append(result.routes[0].overview_path[j] + "<br />");
+                            busRoad.push(result.routes[0].overview_path[j]);
+                            busRoute.setPath(busRoad);
+                        }
+                        $('#text').append("<br />");
+                   }
+                });
+                
+                
             }
             
             function openImage(sensorKey){
