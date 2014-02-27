@@ -346,6 +346,9 @@
                                 case ('lightsource'):
                                     sensorMarkers[i].setIcon("lightsource.png");
                                     break;
+                                case ('windmill'):
+                                    sensorMarkers[i].setIcon("windmill.png");
+                                    break;
                             }
                         }
                     }
@@ -379,7 +382,8 @@
             <input style="margin-right: 5px;" type="checkbox" id="parkinghall" name="filter" onchange="promptMaxResults('parkinghall');" autocomplete="off"/><label for="parkinghall"><img class="icon" src="parking.png"/>  Parking Hall</label><br />
             <input style="margin-right: 5px;" type="checkbox" id="trafficcamera" name="filter" onchange="promptMaxResults('trafficcamera');" autocomplete="off"/><label for="trafficcamera"><img class="icon" src="cam.png"/>  Traffic Camera</label><br />
             <input style="margin-right: 5px;" type="checkbox" id="trafficstation" name="filter" onchange="promptMaxResults('trafficstation');" autocomplete="off"/><label for="trafficstation"><img class="icon" src="traffic.png"/>  Traffic Station</label><br />
-            <input style="margin-right: 5px;" type="checkbox" id="lightsource" name="filter" onchange="promptMaxResults('lightsource');" autocomplete="off"/><label for="lightsource"><img class="icon" src="lightsource.png"/>  Light Source</label>
+            <input style="margin-right: 5px;" type="checkbox" id="lightsource" name="filter" onchange="promptMaxResults('lightsource');" autocomplete="off"/><label for="lightsource"><img class="icon" src="lightsource.png"/>  Light Source</label><br />
+            <input style="margin-right: 5px;" type="checkbox" id="windmill" name="filter" onchange="promptMaxResults('windmill');" autocomplete="off"/><label for="windmill"><img class="icon" src="windmill.png"/>  Windmill</label>
         </div>
         <div id="text"></div>
     </body>
