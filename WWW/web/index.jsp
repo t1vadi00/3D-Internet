@@ -18,6 +18,7 @@
         </style>
         <script type="text/javascript">
             var initialLocation;
+            var ouluLocation = new google.maps.LatLng(65.1, 25.28);
             var serverURL = 'http://dev.cyberlightning.com:44446/';
             var map;
             var position = new Array();
@@ -31,17 +32,28 @@
             var trafficMarkers = new Array();
             var camMarkers = new Array();
             var weatherMarkers = new Array();
+            var lightMarkers = new Array();
+            var windMarkers = new Array();
             var directionService;
             var busRoute;
             var routeLoop;
+            var heatmapActive = false;
+            var infoWindow = new google.maps.InfoWindow({
+                content: ""
+            });
             
             function initialize(){
-                var ouluLocation = new google.maps.LatLng(65.1, 25.28);
 
                 var mapOptions = {
                     zoom: 12
                 };
                 map = new google.maps.Map(document.getElementById("map-canvas"), mapOptions);
+                google.maps.event.addListener(map, 'zoom_changed', function () {
+                    if (heatmapActive){
+                        setRadius();
+                    }
+                });
+            
                 map.setCenter(ouluLocation);
                 
                 
@@ -156,7 +168,7 @@
             function openImage(sensorKey){
                 $.ajax({
                     type: "GET",
-                    url: url,
+                    url: serverURL,
                     dataType: 'json',
                     data: {
                         action: "loadById",
@@ -171,9 +183,11 @@
             }
             
             function showInfo(sensorMarker, sensorKey){
+                infoWindow.close();
+                
                 $.ajax({
                     type: "GET",
-                    url: url,
+                    url: serverURL,
                     dataType: 'json',
                     data: {
                         action: "loadById",
@@ -181,22 +195,55 @@
                         maxResults: 1
                     },
                     success: function(response) {
-                        switch (response[sensorKey].attributes.type){
-                            case ('weatherstation'):
-                                contentString = "Air temperature: " + response[sensorKey].sensors[0].values[0].values + " C" +
-                                        "<br />Road temperature: " + response[sensorKey].sensors[1].values[0].values + " C" +
-                                        "<br />Rain intensity: " + response[sensorKey].sensors[2].values[0].values;
-                                break;
-                            case ('parkinghall'):
-                                contentString = "Free places: " + response[sensorKey].sensors[0].values[0].values +
-                                        "<br />Total places: " + response[sensorKey].sensors[1].values[0].values;
-                                break;
-                            case ('trafficstation'):
-                                contentString = "Traffic speed in: " + response[sensorKey].sensors[0].values[0].values + " km/h" +
-                                        "<br />Traffic speed out: " + response[sensorKey].sensors[1].values[0].values + " km/h";
-                                break;
+                        var contentString = "";
+                        for (var i = 0; i < response[sensorKey].sensors.length; i++){
+                            contentString += response[sensorKey].sensors[i].attributes.type + ": " + response[sensorKey].sensors[i].values[0].values + " " + response[sensorKey].sensors[i].values[0].unit + "<br />";
                         }
-                        var infoWindow = new google.maps.InfoWindow({
+                        if (response[sensorKey].actuators != undefined){
+                            contentString += "<form action='" + serverURL + "' method='POST' target='_blank'><input type='hidden' name='action' value='update'/>";
+                            contentString += "sensor: ";
+                            contentString += "<input type='hidden' name='device_id' value='" + sensorKey + "'/>";
+                            contentString += "<select name='sensor_id'>";
+                            for (var i = 0; i < response[sensorKey].sensors.length; i++){
+                                contentString += "<option value='" + i + "'>" + i + "</option>";
+                            }
+                            contentString += "</select><br />"
+                            contentString += "<input type='hidden' name='parameter' value='" + response[sensorKey].actuators[0].actions[0].parameter + "'/>";
+                            
+                                for(var x = 0; x < response[sensorKey].actuators[0].actions.length; x++){
+                                    contentString += response[sensorKey].actuators[0].actions[x].parameter + ": ";
+                                    contentString += "<select name='value'>";
+                                    for(var z = 0; z < response[sensorKey].actuators[0].actions[x].values.length; z++){
+                                        contentString += "<option value='" + response[sensorKey].actuators[0].actions[x].values[z] + "'>" + response[sensorKey].actuators[0].actions[x].values[z] + "</option>";
+                                    }
+                                }
+                                contentString += "</select><br/>"
+                                contentString += "<input type='submit'/></form>";
+                        }
+//                        switch (response[sensorKey].attributes.type){
+//                            case ('weatherstation'):
+//                                contentString = "Air temperature: " + response[sensorKey].sensors[0].values[0].values + " C" +
+//                                        "<br />Road temperature: " + response[sensorKey].sensors[1].values[0].values + " C" +
+//                                        "<br />Rain intensity: " + response[sensorKey].sensors[2].values[0].values;
+//                                break;
+//                            case ('parkinghall'):
+//                                contentString = "Free places: " + response[sensorKey].sensors[0].values[0].values +
+//                                        "<br />Total places: " + response[sensorKey].sensors[1].values[0].values;
+//                                break;
+//                            case ('trafficstation'):
+//                                contentString = "Traffic speed in: " + response[sensorKey].sensors[0].values[0].values + " km/h" +
+//                                        "<br />Traffic speed out: " + response[sensorKey].sensors[1].values[0].values + " km/h";
+//                                break;
+//                            case ('lightsource'):
+//                                contentString = "Traffic speed in: " + response[sensorKey].sensors[0].values[0].values + " km/h" +
+//                                        "<br />Traffic speed out: " + response[sensorKey].sensors[1].values[0].values + " km/h";
+//                                break;
+//                            case ('windmill'):
+//                                contentString = "Traffic speed in: " + response[sensorKey].sensors[0].values[0].values + " km/h" +
+//                                        "<br />Traffic speed out: " + response[sensorKey].sensors[1].values[0].values + " km/h";
+//                                break;
+//                        }
+                        infoWindow = new google.maps.InfoWindow({
                             content: "<div style='width: 175px; height: 100px;'>" + contentString + "</div>"
                         });
                         infoWindow.open(map,sensorMarker);
@@ -271,88 +318,188 @@
             }
             
             function promptMaxResults(sensorType){
-                var maxResults = prompt("Number of results");
-                
-                if(maxResults == null){
-                    $('#' + sensorType).attr('checked',false);
-                }else{
-                    $.ajax({
-                    type: "GET",
-                    url: serverURL,
-                    dataType: 'json',
-                    data: {
-                        action: "loadBySpatialAndType",
-                        lat: position[0],
-                        lon: position[1],
-                        radius: 100000,
-                        maxResults: maxResults,
-                        type: sensorType
-                    },
-                    success: function(response) {
-                        var keys = Object.keys(response);
+                if ($('#' + sensorType).is(':checked')){
+                    var maxResults = prompt("Number of results");
 
-                        for (var i = 0; i < keys.length; i ++){
-                            var sensorKey = keys[i];
+                    if(maxResults == null){
+                        $('#' + sensorType).attr('checked',false);
+                    }else{
+                        $.ajax({
+                        type: "GET",
+                        url: serverURL,
+                        dataType: 'json',
+                        data: {
+                            action: "loadBySpatialAndType",
+                            lat: position[0],
+                            lon: position[1],
+                            radius: 100000,
+                            maxResults: maxResults,
+                            type: sensorType
+                        },
+                        success: function(response) {
+                            var keys = Object.keys(response);
 
-                            var sensorName = response[sensorKey].attributes.name;
+                            for (var i = 0; i < keys.length; i ++){
+                                var sensorKey = keys[i];
 
-                            var sensorLat = response[sensorKey].attributes.gps[0];
-                            var sensorLng = response[sensorKey].attributes.gps[1];
+                                var sensorName = response[sensorKey].attributes.name;
+                                
+                                if (sensorType == "bus"){
+                                    var sensorLat = response[sensorKey].sensors[0].values[0].values[0];
+                                    var sensorLng = response[sensorKey].sensors[0].values[0].values[1];
+                                }else{
+                                    var sensorLat = response[sensorKey].attributes.gps[0];
+                                    var sensorLng = response[sensorKey].attributes.gps[1];
+                                }
+                                
+                                var sensorPosition = new google.maps.LatLng(sensorLat, sensorLng);
 
-                            var sensorPosition = new google.maps.LatLng(sensorLat, sensorLng);
+                                sensorMarkers[i] = new google.maps.Marker({
+                                    position: sensorPosition,
+                                    title: sensorName,
+                                    map: map
+                                });
 
-                            sensorMarkers[i] = new google.maps.Marker({
-                                position: sensorPosition,
-                                title: sensorName,
-                                map: map
-                            });
+                                switch (sensorType) {
+                                    case ('bus'):
+                                        sensorMarkers[i].setIcon("bus.png");
+                                        busMarkers.push(sensorMarkers[i]);
+                                        addOnBusClick(sensorMarkers[i], sensorKey);
 
-                            switch (sensorType) {
-                                case ('bus'):
-                                    sensorMarkers[i].setIcon("bus.png");
-                                    busMarkers.push(sensorMarkers[i]);
-                                    addOnBusClick(sensorMarkers[i], sensorKey);
+                                        var sensorRouteCoords = new Array();
+                                        var sensorRouteLength = response[sensorKey].sensors[0].attributes.value_range.length;
 
-                                    var sensorRouteCoords = new Array();
-                                    var sensorRouteLength = response[sensorKey].sensors[0].attributes.value_range.length;
+                                        for (var j = 0; j < (sensorRouteLength/2); j++){
+                                            var sensorRouteLat = response[sensorKey].sensors[0].attributes.value_range[(j * 2)];
+                                            var sensorRouteLng = response[sensorKey].sensors[0].attributes.value_range[(j * 2) + 1];
+                                            sensorRouteCoords.push(new google.maps.LatLng(sensorRouteLat, sensorRouteLng));
+                                        }
 
-                                    for (var j = 0; j < (sensorRouteLength/2); j++){
-                                        var sensorRouteLat = response[sensorKey].sensors[0].attributes.value_range[(j * 2)];
-                                        var sensorRouteLng = response[sensorKey].sensors[0].attributes.value_range[(j * 2) + 1];
-                                        sensorRouteCoords.push(new google.maps.LatLng(sensorRouteLat, sensorRouteLng));
-                                    }
+                                        busRoutes[sensorKey] = sensorRouteCoords;
 
-                                    busRoutes[sensorKey] = sensorRouteCoords;
+                                        break;
+                                    case ('wlanstation'):
+                                        sensorMarkers[i].setIcon("wlan.png");
+                                        wlanMarkers.push(sensorMarkers[i]);
 
-                                    break;
-                                case ('wlanstation'):
-                                    sensorMarkers[i].setIcon("wlan.png");
-                                    wlanMarkers.push(sensorMarkers[i]);
-                                    
-                                    wlanPoints.push(sensorPosition);
-                                    break;
-                                case ('weatherstation'):
-                                    sensorMarkers[i].setIcon("weather.png");
-                                    break;
-                                case ('parkinghall'):
-                                    sensorMarkers[i].setIcon("parking.png");
-                                    break;
-                                case ('trafficcamera'):
-                                    sensorMarkers[i].setIcon("cam.png");
-                                    break;
-                                case ('trafficstation'):
-                                    sensorMarkers[i].setIcon("traffic.png");
-                                    break;
-                                case ('lightsource'):
-                                    sensorMarkers[i].setIcon("lightsource.png");
-                                    break;
-                                case ('windmill'):
-                                    sensorMarkers[i].setIcon("windmill.png");
-                                    break;
+                                        wlanPoints.push(sensorPosition);
+                                        break;
+                                    case ('weatherstation'):
+                                        sensorMarkers[i].setIcon("weather.png");
+                                        weatherMarkers.push(sensorMarkers[i]);
+                                        addOnInfoClick(sensorMarkers[i], sensorKey);
+                                        
+                                        break;
+                                    case ('parkinghall'):
+                                        sensorMarkers[i].setIcon("parking.png");
+                                        parkingMarkers.push(sensorMarkers[i]);
+                                        addOnInfoClick(sensorMarkers[i], sensorKey);
+                                        
+                                        break;
+                                    case ('trafficcamera'):
+                                        sensorMarkers[i].setIcon("cam.png");
+                                        camMarkers.push(sensorMarkers[i]);
+                                        addOnCamClick(sensorMarkers[i], sensorKey);
+                                        
+                                        break;
+                                    case ('trafficstation'):
+                                        sensorMarkers[i].setIcon("traffic.png");
+                                        trafficMarkers.push(sensorMarkers[i]);
+                                        addOnInfoClick(sensorMarkers[i], sensorKey);
+                                        
+                                        break;
+                                    case ('lightsource'):
+                                        sensorMarkers[i].setIcon("lightsource.png");
+                                        lightMarkers.push(sensorMarkers[i]);
+                                        addOnInfoClick(sensorMarkers[i], sensorKey);
+                                        
+                                        break;
+                                    case ('windmill'):
+                                        sensorMarkers[i].setIcon("windmill.png");
+                                        windMarkers.push(sensorMarkers[i]);
+                                        addOnInfoClick(sensorMarkers[i], sensorKey);
+                                        
+                                        break;
+                                }
                             }
                         }
+                    });
                     }
-                });
+                }else{
+                    switch (sensorType) {
+                        case ('bus'):
+                            for (var i = 0; i < busMarkers.length; i++){
+                                var busMarker = busMarkers[i];
+                                busMarker.setMap(null);
+                            }
+                            
+                            busMarkers = new Array();
+                            
+                            break;
+                        case ('wlanstation'):
+                            for (var i = 0; i < wlanMarkers.length; i++){
+                                var wlanMarker = wlanMarkers[i];
+                                wlanMarker.setMap(null);
+                            }
+                            
+                            wlanMarkers = new Array();
+                            
+                            break;
+                        case ('weatherstation'):
+                            for (var i = 0; i < weatherMarkers.length; i++){
+                                var weatherMarker = weatherMarkers[i];
+                                weatherMarker.setMap(null);
+                            }
+                            
+                            weatherMarkers = new Array();
+                            
+                            break;
+                        case ('parkinghall'):
+                            for (var i = 0; i < parkingMarkers.length; i++){
+                                var parkingMarker = parkingMarkers[i];
+                                parkingMarker.setMap(null);
+                            }
+                            
+                            parkingMarkers = new Array();
+                            
+                            break;
+                        case ('trafficcamera'):
+                            for (var i = 0; i < camMarkers.length; i++){
+                                var camMarker = camMarkers[i];
+                                camMarker.setMap(null);
+                            }
+                            
+                            camMarkers = new Array();
+                            
+                            break;
+                        case ('trafficstation'):
+                            for (var i = 0; i < trafficMarkers.length; i++){
+                                var trafficMarker = trafficMarkers[i];
+                                trafficMarker.setMap(null);
+                            }
+                            
+                            trafficMarkers = new Array();
+                            
+                            break;
+                        case ('lightsource'):
+                            for (var i = 0; i < lightMarkers.length; i++){
+                                var lightMarker = lightMarkers[i];
+                                lightMarker.setMap(null);
+                            }
+                            
+                            lightMarkers = new Array();
+                            
+                            break;
+                        case ('windmill'):
+                            for (var i = 0; i < windMarkers.length; i++){
+                                var windMarker = windMarkers[i];
+                                windMarker.setMap(null);
+                            }
+                            
+                            windMarkers = new Array();
+                            
+                            break;
+                    }
                 }
             }
             
@@ -368,6 +515,93 @@
                     data: wlanRouters,
                     map: map,
                     radius: 50
+                });
+                
+                setRadius();
+                heatmapActive = true;
+            }
+            
+            var TILE_SIZE = 256;
+
+            function bound(value, opt_min, opt_max) {
+              if (opt_min != null) value = Math.max(value, opt_min);
+              if (opt_max != null) value = Math.min(value, opt_max);
+              return value;
+            }
+
+            function degreesToRadians(deg) {
+              return deg * (Math.PI / 180);
+            }
+
+            function radiansToDegrees(rad) {
+              return rad / (Math.PI / 180);
+            }
+
+            /** @constructor */
+            function MercatorProjection() {
+              this.pixelOrigin_ = new google.maps.Point(TILE_SIZE / 2,
+                  TILE_SIZE / 2);
+              this.pixelsPerLonDegree_ = TILE_SIZE / 360;
+              this.pixelsPerLonRadian_ = TILE_SIZE / (2 * Math.PI);
+            }
+
+            MercatorProjection.prototype.fromLatLngToPoint = function(latLng, opt_point) {
+                var me = this;
+                var point = opt_point || new google.maps.Point(0, 0);
+                var origin = me.pixelOrigin_;
+
+                point.x = origin.x + latLng.lng() * me.pixelsPerLonDegree_;
+
+                // Truncating to 0.9999 effectively limits latitude to 89.189. This is
+                // about a third of a tile past the edge of the world tile.
+                var siny = bound(Math.sin(degreesToRadians(latLng.lat())), -0.9999,
+                    0.9999);
+                point.y = origin.y + 0.5 * Math.log((1 + siny) / (1 - siny)) *
+                    -me.pixelsPerLonRadian_;
+                return point;
+            };
+
+            MercatorProjection.prototype.fromPointToLatLng = function(point) {
+                var me = this;
+                var origin = me.pixelOrigin_;
+                var lng = (point.x - origin.x) / me.pixelsPerLonDegree_;
+                var latRadians = (point.y - origin.y) / -me.pixelsPerLonRadian_;
+                var lat = radiansToDegrees(2 * Math.atan(Math.exp(latRadians)) -
+                    Math.PI / 2);
+                return new google.maps.LatLng(lat, lng);
+            };
+            
+            function setRadius() {
+                var numTiles = 1 << map.getZoom();
+                var projection = new MercatorProjection();
+                var worldCoordinate = projection.fromLatLngToPoint(ouluLocation);
+                var pixelCoordinate = new google.maps.Point(
+                    worldCoordinate.x * numTiles,
+                    worldCoordinate.y * numTiles);
+
+                var ouluLocationNorth = google.maps.geometry.spherical.computeOffset(ouluLocation, 100, 0);
+                var worldCoordinateNew = projection.fromLatLngToPoint(ouluLocationNorth);
+                var pixelCoordinateNew = new google.maps.Point(
+                    worldCoordinateNew.x * numTiles,
+                    worldCoordinateNew.y * numTiles);
+
+                wlanHeatmap.set("radius", Math.floor(pixelCoordinate.y - pixelCoordinateNew.y));
+            }
+          
+            function sendCommand(deviceID, sensorID, parameterValue, newValue){
+                $.ajax({
+                    type: "POST",
+                    url: serverURL,
+                    data: {
+                        action: "update",
+                        device_id: deviceID,
+                        sensor_id: sensorID,
+                        parameter: parameterValue,
+                        value: newValue
+                    },
+                    success: function(response) {
+                        showInfo(markerID, deviceID);
+                    }
                 });
             }
         </script>
