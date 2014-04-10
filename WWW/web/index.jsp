@@ -19,12 +19,13 @@
         <script type="text/javascript">
             var initialLocation;
             var ouluLocation = new google.maps.LatLng(65.1, 25.28);
-            var serverURL = 'http://dev.cyberlightning.com:44446/';
+            var serverURL = 'http://dev2.cyberlightning.com:44448';
             var map;
             var position = new Array();
             var sensorMarkers = new Array();
             var busMarkers = new Array(); 
             var busRoutes = new Array();
+            var currentStop = new Array();
             var busRoad;
             var wlanMarkers = new Array();
             var wlanPoints = new Array();
@@ -111,7 +112,7 @@
             
             function addOnCamClick(sensorMarker, sensorKey){
                 google.maps.event.addListener(sensorMarker, 'click', function() {
-                    openImage(sensorKey);
+                    openImage(sensorMarker, sensorKey);
                 });
             }
             
@@ -132,55 +133,44 @@
                     strokeWeight: 2
                 });
                 
-                busRoad.push(busRoutes[sensorKey][0]);
-                
-                var h = 1;
-                
-                routeLoop = setInterval(function(){getRoutePart(sensorKey, h, h-1, busRoutes)},10000);
-                
+                for (var q = 0; q < 2; q++){
+                    alert((currentStop[sensorKey]));
+                    directionService.route({
+                        origin: busRoutes[sensorKey][(currentStop[sensorKey] - q)],
+                        destination: busRoutes[sensorKey][(currentStop[sensorKey] - q - 1)],
+                        travelMode: google.maps.DirectionsTravelMode.TRANSIT
+                    }, function(result, status){
+                        $('#text').append(status + "<br />");
+                       if (status == google.maps.DirectionsStatus.OK) {
+                            for (var j = 0; j < result.routes[0].overview_path.length; j++) {
+                                $('#text').append(result.routes[0].overview_path[j] + "<br />");
+                                busRoad.push(result.routes[0].overview_path[j]);
+                                busRoute.setPath(busRoad);
+                            }
+                            $('#text').append("<br />");
+                       }
+                    });
+                }   
             }
             
-            function getRoutePart(sensorRouteKey, thisStop, previousStop, busRouteArray){
-                
-                if (thisStop == 50){
-                //if (thisStop == busRouteArray[sensorRouteKey].length){
-                    clearInterval(routeLoop);
-                }
-                directionService.route({
-                    origin: busRouteArray[sensorRouteKey][previousStop],
-                    destination: busRouteArray[sensorRouteKey][thisStop],
-                    travelMode: google.maps.DirectionsTravelMode.TRANSIT
-                }, function(result, status){
-                    $('#text').append(status + "<br />");
-                   if (status == google.maps.DirectionsStatus.OK) {
-                        for (var j = 0; j < result.routes[0].overview_path.length; j++) {
-                            $('#text').append(result.routes[0].overview_path[j] + "<br />");
-                            busRoad.push(result.routes[0].overview_path[j]);
-                            busRoute.setPath(busRoad);
-                        }
-                        $('#text').append("<br />");
-                   }
-                });
-                
-                
-            }
-            
-            function openImage(sensorKey){
+            function openImage(sensorMarker, sensorKey){
                 $.ajax({
                     type: "GET",
                     url: serverURL,
                     dataType: 'json',
                     data: {
-                        action: "loadById",
-                        device_id: sensorKey,
-                        maxResults: 1
+                        action: "getDeviceById",
+                        device_id: sensorKey
                     },
                     success: function(response) {
-                        var sensorImage = response[sensorKey].sensors[0].values[0].values;
-                        window.open(sensorImage);
+                        var sensorImage = response[sensorKey].sensors[0].value.values;
+                        infoWindow = new google.maps.InfoWindow({ content: "<img src='" + sensorImage + "'/>" });
+                        infoWindow.open(map, sensorMarker);
                     }
                 });
             }
+
+            function closeImage() { infoWindow.close(); }
             
             function showInfo(sensorMarker, sensorKey){
                 infoWindow.close();
@@ -190,14 +180,13 @@
                     url: serverURL,
                     dataType: 'json',
                     data: {
-                        action: "loadById",
-                        device_id: sensorKey,
-                        maxResults: 1
+                        action: "getDeviceById",
+                        device_id: sensorKey
                     },
                     success: function(response) {
                         var contentString = "";
                         for (var i = 0; i < response[sensorKey].sensors.length; i++){
-                            contentString += response[sensorKey].sensors[i].attributes.type + ": " + response[sensorKey].sensors[i].values[0].values + " " + response[sensorKey].sensors[i].values[0].unit + "<br />";
+                            contentString += response[sensorKey].sensors[i].attributes.type + ": " + response[sensorKey].sensors[i].value.values + " " + response[sensorKey].sensors[i].value.unit + "<br />";
                         }
                         if (response[sensorKey].actuators != undefined){
                             contentString += "<form action='" + serverURL + "' method='POST' target='_blank'><input type='hidden' name='action' value='update'/>";
@@ -207,10 +196,13 @@
                             for (var i = 0; i < response[sensorKey].sensors.length; i++){
                                 contentString += "<option value='" + i + "'>" + i + "</option>";
                             }
-                            contentString += "</select><br />"
-                            contentString += "<input type='hidden' name='parameter' value='" + response[sensorKey].actuators[0].actions[0].parameter + "'/>";
+                            contentString += "</select><br />";
+                            contentString += "parameter: ";
+                            contentString += "<select name='parameter'>";      
                             
-                                for(var x = 0; x < response[sensorKey].actuators[0].actions.length; x++){
+                                for(var x = 0; x < response[sensorKey].actuators[0].actions.length; x++){ 
+                                    contentString += "<option value='" + response[sensorKey].actuators[0].actions[x].parameter + "'>" + response[sensorKey].actuators[0].actions[x].parameter + "</option>";
+                                    contentString += "</select><br />";
                                     contentString += response[sensorKey].actuators[0].actions[x].parameter + ": ";
                                     contentString += "<select name='value'>";
                                     for(var z = 0; z < response[sensorKey].actuators[0].actions[x].values.length; z++){
@@ -220,31 +212,9 @@
                                 contentString += "</select><br/>"
                                 contentString += "<input type='submit'/></form>";
                         }
-//                        switch (response[sensorKey].attributes.type){
-//                            case ('weatherstation'):
-//                                contentString = "Air temperature: " + response[sensorKey].sensors[0].values[0].values + " C" +
-//                                        "<br />Road temperature: " + response[sensorKey].sensors[1].values[0].values + " C" +
-//                                        "<br />Rain intensity: " + response[sensorKey].sensors[2].values[0].values;
-//                                break;
-//                            case ('parkinghall'):
-//                                contentString = "Free places: " + response[sensorKey].sensors[0].values[0].values +
-//                                        "<br />Total places: " + response[sensorKey].sensors[1].values[0].values;
-//                                break;
-//                            case ('trafficstation'):
-//                                contentString = "Traffic speed in: " + response[sensorKey].sensors[0].values[0].values + " km/h" +
-//                                        "<br />Traffic speed out: " + response[sensorKey].sensors[1].values[0].values + " km/h";
-//                                break;
-//                            case ('lightsource'):
-//                                contentString = "Traffic speed in: " + response[sensorKey].sensors[0].values[0].values + " km/h" +
-//                                        "<br />Traffic speed out: " + response[sensorKey].sensors[1].values[0].values + " km/h";
-//                                break;
-//                            case ('windmill'):
-//                                contentString = "Traffic speed in: " + response[sensorKey].sensors[0].values[0].values + " km/h" +
-//                                        "<br />Traffic speed out: " + response[sensorKey].sensors[1].values[0].values + " km/h";
-//                                break;
-//                        }
+
                         infoWindow = new google.maps.InfoWindow({
-                            content: "<div style='width: 175px; height: 100px;'>" + contentString + "</div>"
+                            content: "<div style='width: 225px; height: 150px;'>" + contentString + "</div>"
                         });
                         infoWindow.open(map,sensorMarker);
                     }
@@ -329,7 +299,7 @@
                         url: serverURL,
                         dataType: 'json',
                         data: {
-                            action: "loadBySpatialAndType",
+                            action: "getDevicesByRadiusAndByDeviceType",
                             lat: position[0],
                             lon: position[1],
                             radius: 100000,
@@ -344,13 +314,8 @@
 
                                 var sensorName = response[sensorKey].attributes.name;
                                 
-                                if (sensorType == "bus"){
-                                    var sensorLat = response[sensorKey].sensors[0].values[0].values[0];
-                                    var sensorLng = response[sensorKey].sensors[0].values[0].values[1];
-                                }else{
-                                    var sensorLat = response[sensorKey].attributes.gps[0];
-                                    var sensorLng = response[sensorKey].attributes.gps[1];
-                                }
+                                var sensorLat = response[sensorKey].attributes.gps[0];
+                                var sensorLng = response[sensorKey].attributes.gps[1];
                                 
                                 var sensorPosition = new google.maps.LatLng(sensorLat, sensorLng);
 
@@ -367,11 +332,17 @@
                                         addOnBusClick(sensorMarkers[i], sensorKey);
 
                                         var sensorRouteCoords = new Array();
-                                        var sensorRouteLength = response[sensorKey].sensors[0].attributes.value_range.length;
-
+                                        var sensorRouteLength = response[sensorKey].sensors[0].attributes.value_range[0].length;
+                                        
                                         for (var j = 0; j < (sensorRouteLength/2); j++){
-                                            var sensorRouteLat = response[sensorKey].sensors[0].attributes.value_range[(j * 2)];
-                                            var sensorRouteLng = response[sensorKey].sensors[0].attributes.value_range[(j * 2) + 1];
+                                            var sensorRouteLat = response[sensorKey].sensors[0].attributes.value_range[0][(j * 2)];
+                                            var sensorRouteLng = response[sensorKey].sensors[0].attributes.value_range[0][(j * 2) + 1];
+                                            
+                                            alert(sensorRouteLat);
+                                            
+                                            if (sensorRouteLat == sensorLat){
+                                                currentStop[sensorKey] = j;
+                                            }
                                             sensorRouteCoords.push(new google.maps.LatLng(sensorRouteLat, sensorRouteLng));
                                         }
 
@@ -504,21 +475,40 @@
             }
             
             function toggleWlanHeatmap() {
-                var wlanRouters = new google.maps.MVCArray(wlanPoints);
-                
-                for (var i = 0; i < wlanMarkers.length; i++){
-                    var wlanMarker = wlanMarkers[i];
-                    wlanMarker.setMap(null);
+                if (heatmapActive){
+                    for (var i = 0; i < wlanMarkers.length; i++){
+                        var wlanMarker = wlanMarkers[i];
+                        wlanMarker.setMap(map);
+                    }
+                    
+                    wlanHeatmap.setMap(null);
+                    
+                    heatmapActive = false;
+                }else{
+                    var wlanRouters = new google.maps.MVCArray(wlanPoints);
+
+                    for (var i = 0; i < wlanMarkers.length; i++){
+                        var wlanMarker = wlanMarkers[i];
+                        wlanMarker.setMap(null);
+                    }
+
+                    wlanHeatmap = new google.maps.visualization.HeatmapLayer({
+                        data: wlanRouters,
+                        map: map,
+                        radius: 50
+                    });
+                    
+                    var gradient = [
+                        'rgba(255,0,0,0)',
+                        'rgba(255,0,0,1)',
+                        'rgba(200,0,0,1)'
+                    ];
+                                        
+                    wlanHeatmap.set('gradient', gradient);
+
+                    setRadius();
+                    heatmapActive = true;
                 }
-                
-                wlanHeatmap = new google.maps.visualization.HeatmapLayer({
-                    data: wlanRouters,
-                    map: map,
-                    radius: 50
-                });
-                
-                setRadius();
-                heatmapActive = true;
             }
             
             var TILE_SIZE = 256;
@@ -604,12 +594,31 @@
                     }
                 });
             }
+            
+            function loadLegend(){
+                var legendString = "";
+                
+                $.ajax({
+                    type: "GET",
+                    url: serverURL,
+                    dataType: 'json',
+                    data: {
+                        action: "getAllDeviceTypes"
+                    },
+                    success: function(response) {                      
+                        for (var n = 0; n < response.length; n++){
+                            legendString += '<input style="margin-right: 5px;" type="checkbox" id="' + response[n] + '" name="filter" onchange="promptMaxResults(\'' + response[n] + '\');" autocomplete="off"/><label for="' + response[n] + '"><img class="icon" src="' + response[n] + '.png"/>  Oulu Bus</label><br />';
+                        }              
+                    }});
+                
+                $("#legend").html(legendString);
+            }
         </script>
     </head>
     <body>
         <h1>Hello World!</h1>
         <div id="map-canvas"></div>
-        <div style="position: absolute; right: 10%; top: 20%; background-color: white; border: solid 1px black; padding: 5px;">
+        <div id="legend" style="position: absolute; right: 10%; top: 20%; background-color: white; border: solid 1px black; padding: 5px;">
             <input style="margin-right: 5px;" type="checkbox" id="bus" name="filter" onchange="promptMaxResults('bus');" autocomplete="off"/><label for="bus"><img class="icon" src="bus.png"/>  Oulu Bus</label><br />
             <input style="margin-right: 5px;" type="checkbox" id="wlanstation" name="filter" onchange="promptMaxResults('wlanstation');" autocomplete="off"/><label for="wlanstation"><img class="icon" src="wlan.png"/>  WLAN Station</label><br />
             <input style="margin-right: 5px;" type="checkbox" id="weatherstation" name="filter" onchange="promptMaxResults('weatherstation');" autocomplete="off"/><label for="weatherstation"><img class="icon" src="weather.png"/>  Weather Station</label><br />
